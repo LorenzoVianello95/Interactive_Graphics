@@ -25,9 +25,11 @@ var arms = [];
 var armGuiFolders = [];
 var baseArm = null;
 var spheres = [];
+var coverageDirty = true;
 
 var params = {
 	coverage: false,
+	coveragePrecision: 2,
 	armCount: 3
 };
 
@@ -47,14 +49,36 @@ var RobotArm = function(armLen, createMesh = true) {
 	this.armLen = armLen;
 	this.childArm = null;
 	this.constraint = {
-		min: -Math.PI,
-		max: Math.PI
+		min: -Math.PI / 2,
+		max: Math.PI / 2
 	}
 
 	this.addArm = function addArm(childArm) {
 		childArm.position.y = this.armLen;
 		this.childArm = childArm;
 		this.add(childArm);
+	}
+
+	this.cloneArm = function cloneArm() {
+		var base = new RobotArm(this.armLen, false);
+		base.rotation = this.rotation;
+		base.constraint = this.constraint;
+		if (this.childArm) {
+			base.addArm(this.childArm.cloneArm());
+		}
+		return base;
+	}
+
+	this.getLastChild = function getLastChild() {
+		if (this.childArm) {
+			var desc = this.childArm;
+			while(desc.childArm) {
+				desc = desc.childArm;
+			}
+			return desc;
+		} else {
+			return this;
+		}
 	}
 
 	this.updateArmLength = function updateArmLength() {
@@ -132,10 +156,9 @@ function init() {
 
 	gui = new dat.GUI();
 	gui.add(params, 'coverage');
-	gui.add(params, 'armCount', 1, 10).step(1);
-	gui.open();
+	gui.add(params, 'coveragePrecision', 1, 16).step(1).name('precision').onFinishChange(onCoveragePrecision);
+	gui.add(params, 'armCount', 1, 4).step(1);
 
-	addSpheres();
 	updateScene();
 
 	onWindowResize();
@@ -178,6 +201,7 @@ function updateArmLengths() {
 	arms.forEach(function(arm) {
 		arm.updateArmLength();
 	});
+	coverageDirty = true;
 }
 
 function updateArmConstraints() {
@@ -197,18 +221,94 @@ function updateArmConstraints() {
 		controller.max(arms[i-1].constraint.max);
 		controller.updateDisplay();
 	}
+	coverageDirty = true;
 }
 
-function addSpheres() {
-	//var sphereMat = new THREE.MeshLambertMaterial({color: 0xff5500, transparent: true, opacity: 0.5});
+function onCoveragePrecision() {
+	coverageDirty = true;
+}
+
+function createCoverage() {
+	spheres.forEach(function(sphere) {
+		delete sphere;
+	});
+	spheres = [];
 	var sphereMat = new THREE.MeshLambertMaterial({color: 0xff0000, transparent: true, opacity: 0.5});
-	var sphMesh = new THREE.Mesh( new THREE.SphereGeometry(0.5, 16, 16), sphereMat);
-	sphMesh.position.y = 2;
-	spheres.push(sphMesh);
-	for (var i = 0; i < 100; ++i) {
-		var copySphere = sphMesh.clone();
-		copySphere.position.y -= 0.5 * (i + 1);
-		spheres.push(copySphere);
+	var sphMesh = new THREE.Mesh( new THREE.SphereGeometry(0.25, 8, 8), sphereMat);
+	var baseArmClone = baseArm.cloneArm();
+	var lastArm = baseArmClone.getLastChild();
+	// make an array with all arms to actaully go through all
+	var armArray = [];
+	var desc = baseArmClone.childArm;
+	while(desc) {
+		armArray.push({
+			arm: desc,
+			dRot: (desc.constraint.max - desc.constraint.min) / params.coveragePrecision
+		});
+		desc = desc.childArm;
+	}
+	// add a dummy arm so we can use it's position
+	lastArm.addArm(new RobotArm(1, false));
+	var endArm = lastArm.childArm;
+	baseArmClone.updateMatrixWorld();
+	// set all arm positions to minimum
+	var resetDescending = function(arm) {
+		arm.traverse(function(a) {
+			a.rotation.x = a.constraint.min;
+		});
+	};
+	resetDescending(baseArmClone.childArm);
+	baseArmClone.updateMatrixWorld();
+	const armCount = armArray.length;
+	armStack = [];
+	for (var i = 0; i < armCount; ++i) {
+		armStack.push({
+			index: i,
+			iteration: 0
+		});
+	}
+	var coveragePositions = [];
+	const lastArmDRot = armArray[armCount - 1].dRot;
+	const lastArmMin = armArray[armCount - 1].arm.constraint.min;
+	while(armStack.length > 0) {
+		var armTop = armStack.pop();
+		var armRef = armArray[armTop.index].arm;
+		// if this is the last arm, iterate it and take all positions
+		if (armTop.index == armCount - 1) {
+			for (var i = 0; i < params.coveragePrecision + 1; ++i) {
+				armRef.rotation.x = lastArmMin + lastArmDRot * i;
+				// the parenting matrices should be updated, so update just this one
+				armRef.updateMatrixWorld();
+				var endPoint = new THREE.Vector3();
+				endPoint.setFromMatrixPosition(endArm.matrixWorld);
+				coveragePositions.push(endPoint);
+			}
+		} else if (armTop.iteration < params.coveragePrecision) {
+			armTop.iteration++;
+			armRef.rotation.x = armRef.constraint.min + armArray[armTop.index].dRot * armTop.iteration;
+			// reset descending arms
+			resetDescending(armRef.childArm);
+			// update matrices
+			armRef.updateMatrixWorld();
+			// now push again elements on the stack along with this arm
+			armStack.push(armTop);
+			for (var i = armTop.index + 1; i < armCount; ++i) {
+				armStack.push({
+					index: i,
+					iteration: 0
+				});
+			}
+		} // else just continue with the next object on the stack
+	}
+
+	for (var i = 0; i < coveragePositions.length; ++i) {
+		var sp = sphMesh.clone();
+		//var sp = new THREE.Mesh(new THREE.SphereGeometry(0.25, 8, 8), sphereMat);
+		const pos = coveragePositions[i];
+		sp.position.setX(pos.x);
+		sp.position.setY(pos.y);
+		sp.position.setZ(pos.z);
+		spheres.push(sp);
 	}
 }
 
@@ -226,9 +326,16 @@ function updateScene() {
 	if (armsUpdated) {
 		updateDatGui();
 	}
-	// spheres.forEach(function (sphere) {
-	// 	scene.add(sphere);
-	// });
+	if (coverageDirty) {
+		spheres.forEach(function(sphere) {
+			scene.remove(sphere);
+		});
+		createCoverage();
+		spheres.forEach(function(sphere) {
+			scene.add(sphere);
+		});
+		coverageDirty = false;
+	}
 }
 
 // GUI
@@ -289,7 +396,7 @@ function render() {
 	var dTime = Date.now() - startTime;
 	spheres.forEach(function (s) {
 		s.visible = params.coverage;
-		s.position.x = Math.sin(dTime / 300);
+		//s.position.x = Math.sin(dTime / 300);
 	});
 	updateScene();
 	renderer.render( scene, camera );
