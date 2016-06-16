@@ -31,13 +31,15 @@ var coveragePositions = [];
 
 var params = {
 	coverage: false,
+	coverageType: 'spheres',
 	coveragePrecision: 2,
 	basePrecision: 0,
 	armCount: 3
 };
 
 var currentParams = {
-	armCount: 0
+	armCount: 0,
+	coverageType: ''
 };
 
 var RobotArm = function(armLen, createMesh = true) {
@@ -160,6 +162,7 @@ function init() {
 	gui = new dat.GUI();
 	// create the main parameters, arms will be created later
 	gui.add(params, 'coverage');
+	gui.add(params, 'coverageType', ['spheres', 'cubes', 'particles']).onChange(onCoverageType);
 	gui.add(params, 'coveragePrecision', 1, 16).step(1).name('precision').onFinishChange(onCoveragePrecision);
 	gui.add(params, 'basePrecision', 0, 16).step(1).onFinishChange(onCoveragePrecision);
 	gui.add(params, 'armCount', 1, 4).step(1);
@@ -234,6 +237,10 @@ function updateArmConstraints() {
 function onCoveragePrecision() {
 	coverageDirtyCount = true;
 	coverageDirtyPos = true;
+}
+
+function onCoverageType() {
+	coverageDirtyCount = true;
 }
 
 function createCoveragePositions() {
@@ -337,8 +344,14 @@ function addSpheres() {
 		delete sphere;
 	});
 	spheres = [];
+	var geom = null;
+	if (params.coverageType == 'spheres') {
+		geom = new THREE.SphereGeometry(0.25, 8, 6);
+	} else if (params.coverageType == 'cubes') {
+		geom = new THREE.CubeGeometry(0.5, 0.5, 0.5);
+	}
 	var sphereMat = new THREE.MeshLambertMaterial({color: 0xff0000, transparent: true, opacity: 0.2});
-	var sphMesh = new THREE.Mesh( new THREE.SphereGeometry(0.25, 8, 6), sphereMat);
+	var sphMesh = new THREE.Mesh(geom, sphereMat);
 	coveragePositions.forEach(function(pos) {
 		var sp = sphMesh.clone();
 		sp.position.setX(pos.x);
@@ -366,10 +379,14 @@ function updateScene() {
 		updateDatGui();
 	}
 	if (coverageDirtyPos || coverageDirtyCount) {
-		createCoveragePositions();
+		if (coverageDirtyPos) {
+			createCoveragePositions();
+			coverageDirtyPos = false;
+		}
 		if (coverageDirtyCount) {
 			addSpheres();
 			coverageDirtyCount = false;
+			currentParams.coverageType = params.coverageType;
 		} else {
 			// only update the sphere positions
 			const covLen = coveragePositions.length;
@@ -379,7 +396,6 @@ function updateScene() {
 				spheres[i].position.setZ(coveragePositions[i].z);
 			}
 		}
-		coverageDirtyPos = false;
 	}
 }
 
