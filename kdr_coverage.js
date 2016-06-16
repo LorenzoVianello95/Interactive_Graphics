@@ -1,27 +1,49 @@
 'use-strict';
 
+// monkey-patch dat.GUI
+
+dat.GUI.prototype.removeFolder = function (fldl) {
+	var name = fldl.name;
+	var folder = this.__folders[name];
+	if (!folder) {
+		return;
+	}
+	folder.close();
+	this.__ul.removeChild(folder.domElement.parentNode);
+	delete this.__folders[name];
+	this.onResize();
+}
+
+// global variables
+
 var container, stats
 
 var camera, controls, scene, renderer;
 var gui;
 var startTime = Date.now();
 var arms = [];
+var armGuiFolders = [];
+var baseArm = null;
 var spheres = [];
-var piecesAdded = false;
-
-var bones = []; // temporary
-var meshes = [];
 
 var params = {
 	coverage: false,
+	armCount: 3
 };
 
-var RobotArm = function(armLen) {
+var currentParams = {
+	armCount: 0
+};
+
+var RobotArm = function(armLen, createMesh = true) {
 	THREE.Object3D.apply(this, arguments);
-	var armGeometry = new THREE.CubeGeometry(0.2, armLen, 0.2);
-	var armMesh = new THREE.Mesh(armGeometry, this.armMaterial);
-	armMesh.position.y = armLen / 2;
-	this.add(armMesh);
+	if (createMesh) {
+		var armGeometry = new THREE.CubeGeometry(0.2, 1, 0.2);
+		this.armMesh = new THREE.Mesh(armGeometry, this.armMaterial);
+		this.armMesh.scale.y = armLen;
+		this.armMesh.position.y = armLen / 2;
+		this.add(this.armMesh);
+	}
 	this.armLen = armLen;
 	this.childArm = null;
 
@@ -29,6 +51,16 @@ var RobotArm = function(armLen) {
 		childArm.position.y = this.armLen;
 		this.childArm = childArm;
 		this.add(childArm);
+	}
+
+	this.updateArmLength = function updateArmLength(len) {
+		if (this.childArm) {
+			this.childArm.position.y = this.armLen;
+		}
+		if (this.armMesh) {
+			this.armMesh.scale.y = this.armLen;
+			this.armMesh.position.y = this.armLen / 2;
+		}
 	}
 }
 RobotArm.prototype = Object.create(THREE.Object3D.prototype);
@@ -58,7 +90,6 @@ function init() {
 
 	// world
 	scene = new THREE.Scene();
-	createArms();
 
 	// lights
 	var light = new THREE.DirectionalLight( 0xffffff );
@@ -89,26 +120,52 @@ function init() {
 
 	gui = new dat.GUI();
 	gui.add(params, 'coverage');
+	gui.add(params, 'armCount', 1, 10).step(1);
 	gui.open();
 
 	addSpheres();
-	addArms();
-	setupDatGui();
+	updateScene();
 
 	onWindowResize();
 
 	animate();
 }
 
-function createArms() {
+function createArms(armCount) {
+	var baseRotation = 0;
+	var armParams = [];
+	if (null != baseArm) {
+		arms.forEach(function(arm) {
+			armParams.push({
+				armLen: arm.armLen,
+				rotation: arm.rotation.x
+			});
+			delete arm;
+		});
+		baseRotation = baseArm.rotation.y;
+		delete baseArm;
+	}
 	arms = [];
-	arms[0] = new RobotArm(2);
-	var prevArm = arms[0];
-	for (var i = 1; i < 4; ++i) {
-		arms[i] = new RobotArm(2);
+	baseArm = new RobotArm(0.2);
+	baseArm.rotation.y = baseRotation;
+	var prevArm = baseArm;
+	for (var i = 0; i < armCount; ++i) {
+		arms[i] = new RobotArm(1);
 		prevArm.addArm(arms[i]);
 		prevArm = arms[i];
 	}
+	var minSize = Math.min(armParams.length, armCount);
+	for (var i = 0; i < minSize; ++i) {
+		arms[i].armLen = armParams[i].armLen;
+		arms[i].rotation.x = armParams[i].rotation;
+	}
+	updateArmLengths();
+}
+
+function updateArmLengths() {
+	arms.forEach(function(arm) {
+		arm.updateArmLength();
+	});
 }
 
 function addSpheres() {
@@ -124,52 +181,49 @@ function addSpheres() {
 	}
 }
 
-function addArms() {
-	scene.add(arms[0]);
-	spheres.forEach(function (sphere) {
-		scene.add(sphere);
-	});
+function updateScene() {
+	var armsUpdated = false;
+	if (currentParams.armCount != params.armCount) {
+		if (null != baseArm) {
+			scene.remove(baseArm);
+		}
+		createArms(params.armCount);
+		scene.add(baseArm); // created by createArms(..)
+		currentParams.armCount = params.armCount;
+		armsUpdated = true;
+	}
+	if (armsUpdated) {
+		updateDatGui();
+	}
+	// spheres.forEach(function (sphere) {
+	// 	scene.add(sphere);
+	// });
 }
 
 // GUI
 
-function setupDatGui () {
+function updateDatGui() {
+	gui.close();
+	armGuiFolders.forEach(function(folder) {
+		gui.removeFolder(folder);
+	});
 
-	var folder;
-	//var bones = mesh.skeleton.bones;
+	armGuiFolders = [];
+	// first add the folder for the baseArm
+	var folder = gui.addFolder("Base");
+	folder.add(baseArm.rotation, 'y', -Math.PI, Math.PI).name('rotation');
+	armGuiFolders.push(folder);
 
 	for ( var i = 0; i < arms.length; i ++ ) {
-
-		var bone = arms[ i ];
-
-		folder = gui.addFolder( "Bone " + i );
-
-		folder.add( bone.position, 'x', - 10 + bone.position.x, 10 + bone.position.x );
-		folder.add( bone.position, 'y', - 10 + bone.position.y, 10 + bone.position.y );
-		folder.add( bone.position, 'z', - 10 + bone.position.z, 10 + bone.position.z );
-
-		folder.add( bone.rotation, 'x', - Math.PI * 0.5, Math.PI * 0.5 );
-		folder.add( bone.rotation, 'y', - Math.PI * 0.5, Math.PI * 0.5 );
-		folder.add( bone.rotation, 'z', - Math.PI * 0.5, Math.PI * 0.5 );
-
-		folder.add( bone.scale, 'x', 0, 2 );
-		folder.add( bone.scale, 'y', 0, 2 );
-		folder.add( bone.scale, 'z', 0, 2 );
-
-		folder.__controllers[ 0 ].name( "position.x" );
-		folder.__controllers[ 1 ].name( "position.y" );
-		folder.__controllers[ 2 ].name( "position.z" );
-
-		folder.__controllers[ 3 ].name( "rotation.x" );
-		folder.__controllers[ 4 ].name( "rotation.y" );
-		folder.__controllers[ 5 ].name( "rotation.z" );
-
-		folder.__controllers[ 6 ].name( "scale.x" );
-		folder.__controllers[ 7 ].name( "scale.y" );
-		folder.__controllers[ 8 ].name( "scale.z" );
-
+		var arm = arms[i];
+		folder = gui.addFolder('Arm ' + i);
+		folder.add(arm.rotation, 'x', -Math.PI * 0.5, Math.PI * 0.5).name('rotation');
+		folder.add(arm, 'armLen', 0.5, 4).onChange(function(value) {
+			updateArmLengths();
+		});
+		armGuiFolders.push(folder);
 	}
-
+	gui.open();
 }
 
 // Render
@@ -194,6 +248,7 @@ function render() {
 		s.visible = params.coverage;
 		s.position.x = Math.sin(dTime / 300);
 	});
+	updateScene();
 	renderer.render( scene, camera );
 	stats.update();
 }
