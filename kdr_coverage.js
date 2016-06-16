@@ -46,6 +46,10 @@ var RobotArm = function(armLen, createMesh = true) {
 	}
 	this.armLen = armLen;
 	this.childArm = null;
+	this.constraint = {
+		min: -Math.PI,
+		max: Math.PI
+	}
 
 	this.addArm = function addArm(childArm) {
 		childArm.position.y = this.armLen;
@@ -53,13 +57,21 @@ var RobotArm = function(armLen, createMesh = true) {
 		this.add(childArm);
 	}
 
-	this.updateArmLength = function updateArmLength(len) {
+	this.updateArmLength = function updateArmLength() {
 		if (this.childArm) {
 			this.childArm.position.y = this.armLen;
 		}
 		if (this.armMesh) {
 			this.armMesh.scale.y = this.armLen;
 			this.armMesh.position.y = this.armLen / 2;
+		}
+	}
+
+	this.updateConstraints = function updateConstraints(vertical) {
+		if (vertical) {
+			this.rotation.y = Math.min(Math.max(this.rotation.y, this.constraint.min), this.constraint.max);
+		} else {
+			this.rotation.x = Math.min(Math.max(this.rotation.x, this.constraint.min), this.constraint.max);
 		}
 	}
 }
@@ -168,6 +180,25 @@ function updateArmLengths() {
 	});
 }
 
+function updateArmConstraints() {
+	if (baseArm) {
+		baseArm.updateConstraints(true);
+		var controller = armGuiFolders[0].__controllers[0];
+		controller.min(baseArm.constraint.min);
+		controller.max(baseArm.constraint.max);
+		controller.updateDisplay();
+	}
+	arms.forEach(function(arm) {
+		arm.updateConstraints(false);
+	});
+	for (var i = 1; i < armGuiFolders.length; ++i) {
+		var controller = armGuiFolders[i].__controllers[0];
+		controller.min(arms[i-1].constraint.min);
+		controller.max(arms[i-1].constraint.max);
+		controller.updateDisplay();
+	}
+}
+
 function addSpheres() {
 	//var sphereMat = new THREE.MeshLambertMaterial({color: 0xff5500, transparent: true, opacity: 0.5});
 	var sphereMat = new THREE.MeshLambertMaterial({color: 0xff0000, transparent: true, opacity: 0.5});
@@ -211,13 +242,25 @@ function updateDatGui() {
 	armGuiFolders = [];
 	// first add the folder for the baseArm
 	var folder = gui.addFolder("Base");
-	folder.add(baseArm.rotation, 'y', -Math.PI, Math.PI).name('rotation');
+	folder.add(baseArm.rotation, 'y', baseArm.constraint.min, baseArm.constraint.max).name('rotation');
+	folder.add(baseArm.constraint, 'min', -Math.PI, 0).onChange(function() {
+		updateArmConstraints();
+	});
+	folder.add(baseArm.constraint, 'max', 0, Math.PI).onChange(function() {
+		updateArmConstraints();
+	});
 	armGuiFolders.push(folder);
 
 	for ( var i = 0; i < arms.length; i ++ ) {
 		var arm = arms[i];
 		folder = gui.addFolder('Arm ' + i);
-		folder.add(arm.rotation, 'x', -Math.PI * 0.5, Math.PI * 0.5).name('rotation');
+		folder.add(arm.rotation, 'x', arm.constraint.min, arm.constraint.max).name('rotation');
+		folder.add(arm.constraint, 'min', -Math.PI, 0).onChange(function() {
+			updateArmConstraints();
+		});
+		folder.add(arm.constraint, 'max', 0, Math.PI).onChange(function() {
+			updateArmConstraints();
+		});
 		folder.add(arm, 'armLen', 0.5, 4).onChange(function(value) {
 			updateArmLengths();
 		});
