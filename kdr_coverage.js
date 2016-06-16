@@ -32,6 +32,7 @@ var coveragePositions = [];
 var params = {
 	coverage: false,
 	coveragePrecision: 2,
+	basePrecision: 0,
 	armCount: 3
 };
 
@@ -157,8 +158,10 @@ function init() {
 	window.addEventListener( 'resize', onWindowResize, false );
 
 	gui = new dat.GUI();
+	// create the main parameters, arms will be created later
 	gui.add(params, 'coverage');
 	gui.add(params, 'coveragePrecision', 1, 16).step(1).name('precision').onFinishChange(onCoveragePrecision);
+	gui.add(params, 'basePrecision', 0, 16).step(1).onFinishChange(onCoveragePrecision);
 	gui.add(params, 'armCount', 1, 4).step(1);
 
 	updateScene();
@@ -249,6 +252,12 @@ function createCoveragePositions() {
 	// add a dummy arm so we can use it's position
 	lastArm.addArm(new RobotArm(1, false));
 	var endArm = lastArm.childArm;
+	// set the base arm rotation
+	if (params.basePrecision != 0) {
+		baseArmClone.rotation.y = baseArmClone.constraint.min;
+	} else {
+		baseArmClone.rotation.y = 0;
+	}
 	baseArmClone.updateMatrixWorld();
 	// set all arm positions to minimum
 	var resetDescending = function(arm) {
@@ -302,6 +311,24 @@ function createCoveragePositions() {
 
 	// delete the base arm clone
 	delete baseArmClone;
+
+	// if the base precision is > 0, the coverage must be rotated around y
+	if (params.basePrecision != 0) {
+		const deltaRot = (baseArmClone.constraint.max - baseArmClone.constraint.min) / params.basePrecision;
+		const axis = new THREE.Vector3(0, 1, 0);
+		const baseCoverageCount = coveragePositions.length;
+		for (var i = 1; i <= params.basePrecision; ++i) {
+			for (var j = 0; j < baseCoverageCount; ++j) {
+				var vec = new THREE.Vector3(
+					coveragePositions[j].x,
+					coveragePositions[j].y,
+					coveragePositions[j].z
+				);
+				vec.applyAxisAngle(axis, deltaRot * i);
+				coveragePositions.push(vec);
+			}
+		}
+	}
 }
 
 function addSpheres() {
