@@ -25,7 +25,9 @@ var arms = [];
 var armGuiFolders = [];
 var baseArm = null;
 var spheres = [];
-var coverageDirty = true;
+var coverageDirtyPos = true;
+var coverageDirtyCount = true;
+var coveragePositions = [];
 
 var params = {
 	coverage: false,
@@ -195,13 +197,15 @@ function createArms(armCount) {
 		arms[i].rotation.x = armParams[i].rotation;
 	}
 	updateArmLengths();
+	// also set the dirty sphere count
+	coverageDirtyCount = true;
 }
 
 function updateArmLengths() {
 	arms.forEach(function(arm) {
 		arm.updateArmLength();
 	});
-	coverageDirty = true;
+	coverageDirtyPos = true;
 }
 
 function updateArmConstraints() {
@@ -221,20 +225,15 @@ function updateArmConstraints() {
 		controller.max(arms[i-1].constraint.max);
 		controller.updateDisplay();
 	}
-	coverageDirty = true;
+	coverageDirtyPos = true;
 }
 
 function onCoveragePrecision() {
-	coverageDirty = true;
+	coverageDirtyCount = true;
+	coverageDirtyPos = true;
 }
 
-function createCoverage() {
-	spheres.forEach(function(sphere) {
-		delete sphere;
-	});
-	spheres = [];
-	var sphereMat = new THREE.MeshLambertMaterial({color: 0xff0000, transparent: true, opacity: 0.5});
-	var sphMesh = new THREE.Mesh( new THREE.SphereGeometry(0.25, 8, 8), sphereMat);
+function createCoveragePositions() {
 	var baseArmClone = baseArm.cloneArm();
 	var lastArm = baseArmClone.getLastChild();
 	// make an array with all arms to actaully go through all
@@ -267,7 +266,7 @@ function createCoverage() {
 			iteration: 0
 		});
 	}
-	var coveragePositions = [];
+	coveragePositions = [];
 	const lastArmDRot = armArray[armCount - 1].dRot;
 	const lastArmMin = armArray[armCount - 1].arm.constraint.min;
 	while(armStack.length > 0) {
@@ -301,15 +300,28 @@ function createCoverage() {
 		} // else just continue with the next object on the stack
 	}
 
-	for (var i = 0; i < coveragePositions.length; ++i) {
+	// delete the base arm clone
+	delete baseArmClone;
+}
+
+function addSpheres() {
+	spheres.forEach(function(sphere) {
+		scene.remove(sphere);
+		delete sphere;
+	});
+	spheres = [];
+	var sphereMat = new THREE.MeshLambertMaterial({color: 0xff0000, transparent: true, opacity: 0.2});
+	var sphMesh = new THREE.Mesh( new THREE.SphereGeometry(0.25, 8, 6), sphereMat);
+	coveragePositions.forEach(function(pos) {
 		var sp = sphMesh.clone();
-		//var sp = new THREE.Mesh(new THREE.SphereGeometry(0.25, 8, 8), sphereMat);
-		const pos = coveragePositions[i];
 		sp.position.setX(pos.x);
 		sp.position.setY(pos.y);
 		sp.position.setZ(pos.z);
 		spheres.push(sp);
-	}
+	});
+	spheres.forEach(function(sphere) {
+		scene.add(sphere);
+	});
 }
 
 function updateScene() {
@@ -326,15 +338,21 @@ function updateScene() {
 	if (armsUpdated) {
 		updateDatGui();
 	}
-	if (coverageDirty) {
-		spheres.forEach(function(sphere) {
-			scene.remove(sphere);
-		});
-		createCoverage();
-		spheres.forEach(function(sphere) {
-			scene.add(sphere);
-		});
-		coverageDirty = false;
+	if (coverageDirtyPos || coverageDirtyCount) {
+		createCoveragePositions();
+		if (coverageDirtyCount) {
+			addSpheres();
+			coverageDirtyCount = false;
+		} else {
+			// only update the sphere positions
+			const covLen = coveragePositions.length;
+			for (var i = 0; i < covLen; ++i) {
+				spheres[i].position.setX(coveragePositions[i].x);
+				spheres[i].position.setY(coveragePositions[i].y);
+				spheres[i].position.setZ(coveragePositions[i].z);
+			}
+		}
+		coverageDirtyPos = false;
 	}
 }
 
