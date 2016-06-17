@@ -31,10 +31,16 @@ var coverageDirtyCount = true;
 var coverageDirtyTransparency = false;
 var coveragePositions = [];
 
+// some constants
+const coverageParticleSize = 0.5;
+const maxPrecision = 32;
+const maxBasePrecision = 64;
+
 var params = {
 	coverage: false,
 	coverageType: 'particles',
 	coverageTransparent: false,
+	coverageDiscrete: true,
 	coveragePrecision: 2,
 	coverageScale: 1,
 	basePrecision: 0,
@@ -112,6 +118,14 @@ var RobotArm = function(armLen, createMesh = true) {
 			this.rotation.x = Math.min(Math.max(this.rotation.x, this.constraint.min), this.constraint.max);
 		}
 	}
+
+	this.getCombinedArmLength = function getCombinedArmLength() {
+		if (!this.childArm) {
+			return this.armLen;
+		} else {
+			return this.armLen + this.childArm.getCombinedArmLength();
+		}
+	}
 }
 RobotArm.prototype = Object.create(THREE.Object3D.prototype);
 RobotArm.prototype.constructor = RobotArm;
@@ -130,6 +144,172 @@ function changeRobotScale() {
 		descending.armMesh.scale.x = params.robotScale;
 		descending.armMesh.scale.z = params.robotScale;
 		descending = descending.childArm;
+	}
+}
+
+var Octree = function Octree(center, halfDim, minDim) {
+	this.c = center;
+	this.halfDim = halfDim;
+	this.minDim = minDim;
+
+	this.points = [];
+
+	this.pxpypz = null;
+	this.pxpynz = null;
+	this.nxpypz = null;
+	this.nxpynz = null;
+	this.pxnypz = null;
+	this.pxnynz = null;
+	this.nxnypz = null;
+	this.nxnynz = null;
+
+	this.addPoint = function(p) {
+		if (this.halfDim < this.minDim) {
+			this.points.push(p);
+		} else {
+			// put in a subtree
+			var subTree = this.getSubtree(p, true);
+			subTree.addPoint(p);
+		}
+	}
+
+	this.containsPoints = function(p) {
+		if (this.halfDim < this.minDim) {
+			return this.points.length;
+		} else {
+			var subTree = this.getSubtree(p, false);
+			return (null != subTree ? subTree.containsPoints(p) : 0);
+		}
+	}
+
+	this.getCentersWithPoint = function(a) {
+		if (this.halfDim < this.minDim) {
+			if (this.points.length > 0) {
+				a.push(this.c);
+			}
+		} else {
+			if (this.pxpypz) {
+				this.pxpypz.getCentersWithPoint(a);
+			}
+			if (this.pxpynz) {
+				this.pxpynz.getCentersWithPoint(a);
+			}
+			if (this.nxpypz) {
+				this.nxpypz.getCentersWithPoint(a);
+			}
+			if (this.nxpynz) {
+				this.nxpynz.getCentersWithPoint(a);
+			}
+			if (this.pxnypz) {
+				this.pxnypz.getCentersWithPoint(a);
+			}
+			if (this.pxnynz) {
+				this.pxnynz.getCentersWithPoint(a);
+			}
+			if (this.nxnypz) {
+				this.nxnypz.getCentersWithPoint(a);
+			}
+			if (this.nxnynz) {
+				this.nxnynz.getCentersWithPoint(a);
+			}
+		}
+	}
+
+	this.getSubtree = function(p, create) {
+		if (p.y > this.c.y) {
+			if (p.x > this.c.x) {
+				if (p.z > this.c.z) {
+					if (!this.pxpypz && create) {
+						this.pxpypz = this.createSubtree(
+							this.c.x + halfDim,
+							this.c.y + halfDim,
+							this.c.z + halfDim
+						);
+					}
+					return this.pxpypz;
+				} else {
+					if (!this.pxpynz && create) {
+						this.pxpynz = this.createSubtree(
+							this.c.x + halfDim,
+							this.c.y + halfDim,
+							this.c.z - halfDim
+						);
+					}
+					return this.pxpynz;
+				}
+			} else {
+				if (p.z > this.c.z) {
+					if (!this.nxpypz && create) {
+						this.nxpypz = this.createSubtree(
+							this.c.x - halfDim,
+							this.c.y + halfDim,
+							this.c.z + halfDim
+						);
+					}
+					return this.nxpypz;
+				} else {
+					if (!this.nxpynz && create) {
+						this.nxpynz = this.createSubtree(
+							this.c.x - halfDim,
+							this.c.y + halfDim,
+							this.c.z - halfDim
+						);
+					}
+					return this.nxpynz;
+				}
+			}
+		} else {
+			if (p.x > this.c.x) {
+				if (p.z > this.c.z) {
+					if (!this.pxnypz && create) {
+						this.pxnypz = this.createSubtree(
+							this.c.x + halfDim,
+							this.c.y - halfDim,
+							this.c.z + halfDim
+						);
+					}
+					return this.pxnypz;
+				} else {
+					if (!this.pxnynz && create) {
+						this.pxnynz = this.createSubtree(
+							this.c.x + halfDim,
+							this.c.y - halfDim,
+							this.c.z - halfDim
+						);
+					}
+					return this.pxnynz;
+				}
+			} else {
+				if (p.z > this.c.z) {
+					if (!this.nxnypz && create) {
+						this.nxnypz = this.createSubtree(
+							this.c.x - halfDim,
+							this.c.y - halfDim,
+							this.c.z + halfDim
+						);
+					}
+					return this.nxnypz;
+				} else {
+					if (!this.nxnynz && create) {
+						this.nxnynz = this.createSubtree(
+							this.c.x - halfDim,
+							this.c.y - halfDim,
+							this.c.z - halfDim
+						);
+					}
+					return this.nxnynz;
+				}
+			}
+		}
+	}
+
+	this.createSubtree = function(x, y, z) {
+		var center = new THREE.Vector3(
+			(this.c.x + x) / 2,
+			(this.c.y + y) / 2,
+			(this.c.z + z) / 2
+		);
+		return new Octree(center, this.halfDim / 2, this.minDim);
 	}
 }
 
@@ -193,8 +373,9 @@ function init() {
 	coverageFolder.add(params, 'coverage');
 	coverageFolder.add(params, 'coverageType', ['particles', 'spheres', 'cubes']).name('type').onChange(onCoverageType);
 	coverageFolder.add(params, 'coverageTransparent').name('transparent').onChange(changeTransparency);
-	coverageFolder.add(params, 'coveragePrecision', 1, 16).step(1).name('precision').onFinishChange(onCoveragePrecision);
-	coverageFolder.add(params, 'basePrecision', 0, 16).step(1).onFinishChange(onCoveragePrecision);
+	coverageFolder.add(params, 'coverageDiscrete').name('discrete').onChange(onChangeCoverateDiscrete);
+	coverageFolder.add(params, 'coveragePrecision', 1, maxPrecision).step(1).name('precision').onFinishChange(onCoveragePrecision);
+	coverageFolder.add(params, 'basePrecision', 0, maxBasePrecision).step(1).onFinishChange(onCoveragePrecision);
 	coverageFolder.add(params, 'coverageScale', 0.1, 1).name('scale').onChange(changeCoverageScale);
 	coverageFolder.addColor(params, 'coverageColor').name('color').onChange(changeCoverageColor);
 
@@ -374,6 +555,18 @@ function createCoveragePositions() {
 			}
 		}
 	}
+
+	if (params.coverageDiscrete) {
+		var combinedArmLen = baseArm.getCombinedArmLength();
+		var octree = new Octree(new THREE.Vector3(0, 0, 0), combinedArmLen + 0.5, coverageParticleSize * params.coverageScale);
+		coveragePositions.forEach(function(pos) {
+			octree.addPoint(pos);
+		});
+		var newPositions = [];
+		octree.getCentersWithPoint(newPositions);
+		coverageDirtyCount = coverageDirtyCount || spheres.length != newPositions.length;
+		coveragePositions = newPositions;
+	}
 }
 
 function addSpheres() {
@@ -399,7 +592,7 @@ function addSpheres() {
 		geometry.addAttribute( 'position', new THREE.BufferAttribute( positions, 3 ) );
 		geometry.computeBoundingSphere();
 		var material = new THREE.PointsMaterial({
-			size: 0.5 * params.coverageScale
+			size: coverageParticleSize * params.coverageScale
 		});
 		material.color = new THREE.Color(parseInt(params.coverageColor.replace('#', '0x')));
 		if (params.coverageTransparent) {
@@ -411,9 +604,9 @@ function addSpheres() {
 	} else {
 		var geom = null;
 		if (params.coverageType == 'spheres') {
-			geom = new THREE.SphereGeometry(0.25, 8, 6);
+			geom = new THREE.SphereGeometry(coverageParticleSize / 2, 8, 6);
 		} else if (params.coverageType == 'cubes') {
-			geom = new THREE.CubeGeometry(0.5, 0.5, 0.5);
+			geom = new THREE.CubeGeometry(coverageParticleSize, coverageParticleSize, coverageParticleSize);
 		}
 		var sphereMat = new THREE.MeshLambertMaterial();
 		sphereMat.color = new THREE.Color(parseInt(params.coverageColor.replace('#', '0x')));
@@ -450,6 +643,11 @@ function changeTransparency() {
 	}
 }
 
+function onChangeCoverateDiscrete() {
+	coverageDirtyPos = true;
+	coverageDirtyCount = true;
+}
+
 function changeCoverageColor() {
 	var colorObj = new THREE.Color(parseInt(params.coverageColor.replace('#', '0x')));
 	if (particles) {
@@ -462,14 +660,19 @@ function changeCoverageColor() {
 }
 
 function changeCoverageScale() {
-	if (particles) {
-		particles.material.size = 0.5 * params.coverageScale;
+	if (params.coverageDiscrete) {
+		coverageDirtyPos = true;
+		coverageDirtyCount = true;
 	} else {
-		spheres.forEach(function(mesh) {
-			mesh.scale.x = params.coverageScale;
-			mesh.scale.y = params.coverageScale;
-			mesh.scale.z = params.coverageScale;
-		});
+		if (particles) {
+			particles.material.size = coverageParticleSize * params.coverageScale;
+		} else {
+			spheres.forEach(function(mesh) {
+				mesh.scale.x = params.coverageScale;
+				mesh.scale.y = params.coverageScale;
+				mesh.scale.z = params.coverageScale;
+			});
+		}
 	}
 }
 
