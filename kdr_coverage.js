@@ -190,21 +190,27 @@ function init() {
 
 function createArms(armCount) {
 	var baseRotation = 0;
+	var baseConstraint = null;
 	var armParams = [];
 	if (null != baseArm) {
 		arms.forEach(function(arm) {
 			armParams.push({
 				armLen: arm.armLen,
-				rotation: arm.rotation.x
+				rotation: arm.rotation.x,
+				constraint: arm.constraint
 			});
 			delete arm;
 		});
 		baseRotation = baseArm.rotation.y;
+		baseConstraint = baseArm.constraint;
 		delete baseArm;
 	}
 	arms = [];
 	baseArm = new RobotArm(0.2);
 	baseArm.rotation.y = baseRotation;
+	if (baseConstraint) {
+		baseArm.constraint = baseConstraint;
+	}
 	var prevArm = baseArm;
 	for (var i = 0; i < armCount; ++i) {
 		arms[i] = new RobotArm(1);
@@ -215,6 +221,7 @@ function createArms(armCount) {
 	for (var i = 0; i < minSize; ++i) {
 		arms[i].armLen = armParams[i].armLen;
 		arms[i].rotation.x = armParams[i].rotation;
+		arms[i].constraint = armParams[i].constraint;
 	}
 	updateArmLengths();
 	// also set the dirty sphere count
