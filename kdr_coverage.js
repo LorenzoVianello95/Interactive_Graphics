@@ -37,7 +37,9 @@ var params = {
 	coverageTransparent: false,
 	coveragePrecision: 2,
 	basePrecision: 0,
-	armCount: 3
+	armCount: 3,
+	robotColor: '#dd4411',
+	coverageColor: '#ff0000'
 };
 
 var currentParams = {
@@ -109,9 +111,12 @@ var RobotArm = function(armLen, createMesh = true) {
 }
 RobotArm.prototype = Object.create(THREE.Object3D.prototype);
 RobotArm.prototype.constructor = RobotArm;
-RobotArm.prototype.armMaterial = new THREE.MeshLambertMaterial({
-	color: 0xdd4411
-});
+RobotArm.prototype.armMaterial = new THREE.MeshLambertMaterial();
+RobotArm.prototype.armMaterial.color = new THREE.Color(parseInt(params.robotColor.replace('#', '0x')));
+
+function changeRobotColor() {
+	RobotArm.prototype.armMaterial.color = new THREE.Color(parseInt(params.robotColor.replace('#', '0x')));
+}
 
 window.addEventListener('load', init);
 
@@ -164,12 +169,17 @@ function init() {
 
 	gui = new dat.GUI();
 	// create the main parameters, arms will be created later
-	gui.add(params, 'coverage');
-	gui.add(params, 'coverageType', ['particles', 'spheres', 'cubes']).onChange(onCoverageType);
-	gui.add(params, 'coverageTransparent').onChange(onCoverageTransparent);
-	gui.add(params, 'coveragePrecision', 1, 16).step(1).name('precision').onFinishChange(onCoveragePrecision);
-	gui.add(params, 'basePrecision', 0, 16).step(1).onFinishChange(onCoveragePrecision);
-	gui.add(params, 'armCount', 1, 6).step(1);
+	var robotFolder = gui.addFolder('Robot');
+	robotFolder.add(params, 'armCount', 1, 6).name('arm count').step(1);
+	robotFolder.addColor(params, 'robotColor').name('color').onChange(changeRobotColor);
+
+	var coverageFolder = gui.addFolder('Coverage');
+	coverageFolder.add(params, 'coverage');
+	coverageFolder.add(params, 'coverageType', ['particles', 'spheres', 'cubes']).name('type').onChange(onCoverageType);
+	coverageFolder.add(params, 'coverageTransparent').name('transparent').onChange(changeTransparency);
+	coverageFolder.add(params, 'coveragePrecision', 1, 16).step(1).name('precision').onFinishChange(onCoveragePrecision);
+	coverageFolder.add(params, 'basePrecision', 0, 16).step(1).onFinishChange(onCoveragePrecision);
+	coverageFolder.addColor(params, 'coverageColor').name('color').onChange(changeCoverageColor);
 
 	updateScene();
 
@@ -245,10 +255,6 @@ function onCoveragePrecision() {
 
 function onCoverageType() {
 	coverageDirtyCount = true;
-}
-
-function onCoverageTransparent() {
-	coverageDirtyTransparency = true;
 }
 
 function createCoveragePositions() {
@@ -368,11 +374,10 @@ function addSpheres() {
 		}
 		geometry.addAttribute( 'position', new THREE.BufferAttribute( positions, 3 ) );
 		geometry.computeBoundingSphere();
-
 		var material = new THREE.PointsMaterial({
-			color: 0xff0000,
 			size: 0.25
 		});
+		material.color = new THREE.Color(parseInt(params.coverageColor.replace('#', '0x')));
 		if (params.coverageTransparent) {
 			material.transparent = true;
 			material.opacity = 0.2;
@@ -386,7 +391,8 @@ function addSpheres() {
 		} else if (params.coverageType == 'cubes') {
 			geom = new THREE.CubeGeometry(0.5, 0.5, 0.5);
 		}
-		var sphereMat = new THREE.MeshLambertMaterial({ color: 0xff0000 });
+		var sphereMat = new THREE.MeshLambertMaterial();
+		sphereMat.color = new THREE.Color(parseInt(params.coverageColor.replace('#', '0x')));
 		if (params.coverageTransparent) {
 			sphereMat.transparent = true;
 			sphereMat.opacity = 0.2;
@@ -413,6 +419,17 @@ function changeTransparency() {
 		spheres.forEach(function(mesh) {
 			mesh.material.transparent = params.coverageTransparent;
 			mesh.material.opacity = 0.2;
+		});
+	}
+}
+
+function changeCoverageColor() {
+	var colorObj = new THREE.Color(parseInt(params.coverageColor.replace('#', '0x')));
+	if (particles) {
+		particles.material.color = colorObj;
+	} else {
+		spheres.forEach(function(mesh) {
+			mesh.material.color = colorObj;
 		});
 	}
 }
