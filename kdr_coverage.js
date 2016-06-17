@@ -36,8 +36,10 @@ var params = {
 	coverageType: 'particles',
 	coverageTransparent: false,
 	coveragePrecision: 2,
+	coverageScale: 1,
 	basePrecision: 0,
 	armCount: 3,
+	robotScale: 1,
 	robotColor: '#dd4411',
 	coverageColor: '#ff0000'
 };
@@ -50,9 +52,11 @@ var currentParams = {
 var RobotArm = function(armLen, createMesh = true) {
 	THREE.Object3D.apply(this, arguments);
 	if (createMesh) {
-		var armGeometry = new THREE.CubeGeometry(0.2, 1, 0.2);
+		var armGeometry = new THREE.CubeGeometry(0.25, 1, 0.25);
 		this.armMesh = new THREE.Mesh(armGeometry, this.armMaterial);
+		this.armMesh.scale.x = params.robotScale;
 		this.armMesh.scale.y = armLen;
+		this.armMesh.scale.z = params.robotScale;
 		this.armMesh.position.y = armLen / 2;
 		this.add(this.armMesh);
 	}
@@ -118,6 +122,17 @@ function changeRobotColor() {
 	RobotArm.prototype.armMaterial.color = new THREE.Color(parseInt(params.robotColor.replace('#', '0x')));
 }
 
+function changeRobotScale() {
+	baseArm.armMesh.scale.x = params.robotScale;
+	baseArm.armMesh.scale.z = params.robotScale;
+	var descending = baseArm.childArm;
+	while(descending) {
+		descending.armMesh.scale.x = params.robotScale;
+		descending.armMesh.scale.z = params.robotScale;
+		descending = descending.childArm;
+	}
+}
+
 window.addEventListener('load', init);
 
 function init() {
@@ -171,6 +186,7 @@ function init() {
 	// create the main parameters, arms will be created later
 	var robotFolder = gui.addFolder('Robot');
 	robotFolder.add(params, 'armCount', 1, 6).name('arm count').step(1);
+	robotFolder.add(params, 'robotScale', 0.5, 4).name('scale').onChange(changeRobotScale);
 	robotFolder.addColor(params, 'robotColor').name('color').onChange(changeRobotColor);
 
 	var coverageFolder = gui.addFolder('Coverage');
@@ -179,6 +195,7 @@ function init() {
 	coverageFolder.add(params, 'coverageTransparent').name('transparent').onChange(changeTransparency);
 	coverageFolder.add(params, 'coveragePrecision', 1, 16).step(1).name('precision').onFinishChange(onCoveragePrecision);
 	coverageFolder.add(params, 'basePrecision', 0, 16).step(1).onFinishChange(onCoveragePrecision);
+	coverageFolder.add(params, 'coverageScale', 0.1, 1).name('scale').onChange(changeCoverageScale);
 	coverageFolder.addColor(params, 'coverageColor').name('color').onChange(changeCoverageColor);
 
 	updateScene();
@@ -382,7 +399,7 @@ function addSpheres() {
 		geometry.addAttribute( 'position', new THREE.BufferAttribute( positions, 3 ) );
 		geometry.computeBoundingSphere();
 		var material = new THREE.PointsMaterial({
-			size: 0.25
+			size: 0.5 * params.coverageScale
 		});
 		material.color = new THREE.Color(parseInt(params.coverageColor.replace('#', '0x')));
 		if (params.coverageTransparent) {
@@ -405,6 +422,9 @@ function addSpheres() {
 			sphereMat.opacity = 0.2;
 		}
 		var sphMesh = new THREE.Mesh(geom, sphereMat);
+		sphMesh.scale.x = params.coverageScale;
+		sphMesh.scale.y = params.coverageScale;
+		sphMesh.scale.z = params.coverageScale;
 		coveragePositions.forEach(function(pos) {
 			var sp = sphMesh.clone();
 			sp.position.setX(pos.x);
@@ -437,6 +457,18 @@ function changeCoverageColor() {
 	} else {
 		spheres.forEach(function(mesh) {
 			mesh.material.color = colorObj;
+		});
+	}
+}
+
+function changeCoverageScale() {
+	if (particles) {
+		particles.material.size = 0.5 * params.coverageScale;
+	} else {
+		spheres.forEach(function(mesh) {
+			mesh.scale.x = params.coverageScale;
+			mesh.scale.y = params.coverageScale;
+			mesh.scale.z = params.coverageScale;
 		});
 	}
 }
