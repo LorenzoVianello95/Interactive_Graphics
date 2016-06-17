@@ -25,13 +25,16 @@ var arms = [];
 var armGuiFolders = [];
 var baseArm = null;
 var spheres = [];
+var particles = null;
 var coverageDirtyPos = true;
 var coverageDirtyCount = true;
+var coverageDirtyTransparency = false;
 var coveragePositions = [];
 
 var params = {
 	coverage: false,
-	coverageType: 'spheres',
+	coverageType: 'particles',
+	coverageTransparent: false,
 	coveragePrecision: 2,
 	basePrecision: 0,
 	armCount: 3
@@ -162,10 +165,11 @@ function init() {
 	gui = new dat.GUI();
 	// create the main parameters, arms will be created later
 	gui.add(params, 'coverage');
-	gui.add(params, 'coverageType', ['spheres', 'cubes', 'particles']).onChange(onCoverageType);
+	gui.add(params, 'coverageType', ['particles', 'spheres', 'cubes']).onChange(onCoverageType);
+	gui.add(params, 'coverageTransparent').onChange(onCoverageTransparent);
 	gui.add(params, 'coveragePrecision', 1, 16).step(1).name('precision').onFinishChange(onCoveragePrecision);
 	gui.add(params, 'basePrecision', 0, 16).step(1).onFinishChange(onCoveragePrecision);
-	gui.add(params, 'armCount', 1, 4).step(1);
+	gui.add(params, 'armCount', 1, 6).step(1);
 
 	updateScene();
 
@@ -241,6 +245,10 @@ function onCoveragePrecision() {
 
 function onCoverageType() {
 	coverageDirtyCount = true;
+}
+
+function onCoverageTransparent() {
+	coverageDirtyTransparency = true;
 }
 
 function createCoveragePositions() {
@@ -344,24 +352,69 @@ function addSpheres() {
 		delete sphere;
 	});
 	spheres = [];
-	var geom = null;
-	if (params.coverageType == 'spheres') {
-		geom = new THREE.SphereGeometry(0.25, 8, 6);
-	} else if (params.coverageType == 'cubes') {
-		geom = new THREE.CubeGeometry(0.5, 0.5, 0.5);
+	if (particles) {
+		scene.remove(particles);
+		delete particles;
+		particles = null;
 	}
-	var sphereMat = new THREE.MeshLambertMaterial({color: 0xff0000, transparent: true, opacity: 0.2});
-	var sphMesh = new THREE.Mesh(geom, sphereMat);
-	coveragePositions.forEach(function(pos) {
-		var sp = sphMesh.clone();
-		sp.position.setX(pos.x);
-		sp.position.setY(pos.y);
-		sp.position.setZ(pos.z);
-		spheres.push(sp);
-	});
-	spheres.forEach(function(sphere) {
-		scene.add(sphere);
-	});
+	if (params.coverageType == 'particles') {
+		var geometry = new THREE.BufferGeometry();
+		const posCount = coveragePositions.length;
+		var positions = new Float32Array(posCount * 3);
+		for (var i = 0; i < posCount; ++i) {
+			positions[i * 3    ] = coveragePositions[i].x;
+			positions[i * 3 + 1] = coveragePositions[i].y;
+			positions[i * 3 + 2] = coveragePositions[i].z;
+		}
+		geometry.addAttribute( 'position', new THREE.BufferAttribute( positions, 3 ) );
+		geometry.computeBoundingSphere();
+
+		var material = new THREE.PointsMaterial({
+			color: 0xff0000,
+			size: 0.25
+		});
+		if (params.coverageTransparent) {
+			material.transparent = true;
+			material.opacity = 0.2;
+		}
+		particles = new THREE.Points(geometry, material);
+		scene.add(particles);
+	} else {
+		var geom = null;
+		if (params.coverageType == 'spheres') {
+			geom = new THREE.SphereGeometry(0.25, 8, 6);
+		} else if (params.coverageType == 'cubes') {
+			geom = new THREE.CubeGeometry(0.5, 0.5, 0.5);
+		}
+		var sphereMat = new THREE.MeshLambertMaterial({ color: 0xff0000 });
+		if (params.coverageTransparent) {
+			sphereMat.transparent = true;
+			sphereMat.opacity = 0.2;
+		}
+		var sphMesh = new THREE.Mesh(geom, sphereMat);
+		coveragePositions.forEach(function(pos) {
+			var sp = sphMesh.clone();
+			sp.position.setX(pos.x);
+			sp.position.setY(pos.y);
+			sp.position.setZ(pos.z);
+			spheres.push(sp);
+		});
+		spheres.forEach(function(sphere) {
+			scene.add(sphere);
+		});
+	}
+}
+
+function changeTransparency() {
+	if (particles) {
+		particles.material.transparent = params.coverageTransparent;
+		particles.material.opacity = 0.2;
+	} else {
+		spheres.forEach(function(mesh) {
+			mesh.material.transparent = params.coverageTransparent;
+			mesh.material.opacity = 0.2;
+		});
+	}
 }
 
 function updateScene() {
@@ -390,12 +443,27 @@ function updateScene() {
 		} else {
 			// only update the sphere positions
 			const covLen = coveragePositions.length;
-			for (var i = 0; i < covLen; ++i) {
-				spheres[i].position.setX(coveragePositions[i].x);
-				spheres[i].position.setY(coveragePositions[i].y);
-				spheres[i].position.setZ(coveragePositions[i].z);
+			if (currentParams.coverageType == 'particles') {
+				const posCount = coveragePositions.length;
+				var positions = new Float32Array(posCount * 3);
+				for (var i = 0; i < posCount; ++i) {
+					positions[i * 3    ] = coveragePositions[i].x;
+					positions[i * 3 + 1] = coveragePositions[i].y;
+					positions[i * 3 + 2] = coveragePositions[i].z;
+				}
+				particles.geometry.removeAttribute('position');
+				particles.geometry.addAttribute( 'position', new THREE.BufferAttribute( positions, 3 ) );
+			} else {
+				for (var i = 0; i < covLen; ++i) {
+					spheres[i].position.setX(coveragePositions[i].x);
+					spheres[i].position.setY(coveragePositions[i].y);
+					spheres[i].position.setZ(coveragePositions[i].z);
+				}
 			}
 		}
+	}
+	if (coverageDirtyTransparency) {
+		changeTransparency();
 	}
 }
 
@@ -459,6 +527,9 @@ function render() {
 		s.visible = params.coverage;
 		//s.position.x = Math.sin(dTime / 300);
 	});
+	if (particles) {
+		particles.visible = params.coverage;
+	}
 	updateScene();
 	renderer.render( scene, camera );
 	stats.update();
