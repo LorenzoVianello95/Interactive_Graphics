@@ -32,6 +32,7 @@ var coverageDirtyTransparency = false;
 var coveragePositions = [];
 
 // some constants
+const epsilon = 1e-6;
 const coverageParticleSize = 0.5;
 const maxPrecision = 32;
 const maxBasePrecision = 64;
@@ -40,9 +41,9 @@ var params = {
 	coverage: false,
 	coverageType: 'particles',
 	coverageTransparent: false,
-	coverageDiscrete: true,
-	coveragePrecision: 2,
-	coverageScale: 1,
+	coverageDiscrete: false,
+	coveragePrecision: 8,
+	coverageScale: 0.5,
 	basePrecision: 0,
 	armCount: 3,
 	robotScale: 1,
@@ -52,7 +53,8 @@ var params = {
 
 var currentParams = {
 	armCount: 0,
-	coverageType: ''
+	coverageType: '',
+	minDim: 0
 };
 
 var RobotArm = function(armLen, createMesh = true) {
@@ -311,6 +313,14 @@ var Octree = function Octree(center, halfDim, minDim) {
 		);
 		return new Octree(center, this.halfDim / 2, this.minDim);
 	}
+
+	this.getMinimalHalfDim = function() {
+		var hd = this.halfDim;
+		while (hd > this.minDim) {
+			hd /= 2;
+		}
+		return hd;
+	}
 }
 
 window.addEventListener('load', init);
@@ -558,13 +568,18 @@ function createCoveragePositions() {
 
 	if (params.coverageDiscrete) {
 		var combinedArmLen = baseArm.getCombinedArmLength();
-		var octree = new Octree(new THREE.Vector3(0, 0, 0), combinedArmLen + 0.5, coverageParticleSize * params.coverageScale);
+		var octree = new Octree(new THREE.Vector3(-0.1, 0, 0), combinedArmLen + 0.5, coverageParticleSize * params.coverageScale);
 		coveragePositions.forEach(function(pos) {
 			octree.addPoint(pos);
 		});
 		var newPositions = [];
 		octree.getCentersWithPoint(newPositions);
-		coverageDirtyCount = coverageDirtyCount || spheres.length != newPositions.length;
+		var minDim = octree.getMinimalHalfDim() * 2;
+		var updateCount = Math.abs(currentParams.minDim - minDim) > epsilon || spheres.length != newPositions.length;
+		if (updateCount) {
+			currentParams.minDim = minDim;
+		}
+		coverageDirtyCount = coverageDirtyCount || updateCount;
 		coveragePositions = newPositions;
 	}
 }
@@ -594,6 +609,9 @@ function addSpheres() {
 		var material = new THREE.PointsMaterial({
 			size: coverageParticleSize * params.coverageScale
 		});
+		if (params.coverageDiscrete) {
+			material.size = currentParams.minDim * 1.3333;
+		}
 		material.color = new THREE.Color(parseInt(params.coverageColor.replace('#', '0x')));
 		if (params.coverageTransparent) {
 			material.transparent = true;
@@ -603,10 +621,11 @@ function addSpheres() {
 		scene.add(particles);
 	} else {
 		var geom = null;
+		var geomSize = (params.coverageDiscrete ? currentParams.minDim : coverageParticleSize);
 		if (params.coverageType == 'spheres') {
-			geom = new THREE.SphereGeometry(coverageParticleSize / 2, 8, 6);
+			geom = new THREE.SphereGeometry(geomSize / 2, 8, 6);
 		} else if (params.coverageType == 'cubes') {
-			geom = new THREE.CubeGeometry(coverageParticleSize, coverageParticleSize, coverageParticleSize);
+			geom = new THREE.CubeGeometry(geomSize, geomSize, geomSize);
 		}
 		var sphereMat = new THREE.MeshLambertMaterial();
 		sphereMat.color = new THREE.Color(parseInt(params.coverageColor.replace('#', '0x')));
@@ -615,9 +634,11 @@ function addSpheres() {
 			sphereMat.opacity = 0.2;
 		}
 		var sphMesh = new THREE.Mesh(geom, sphereMat);
-		sphMesh.scale.x = params.coverageScale;
-		sphMesh.scale.y = params.coverageScale;
-		sphMesh.scale.z = params.coverageScale;
+		if (!params.coverageDiscrete) {
+			sphMesh.scale.x = params.coverageScale;
+			sphMesh.scale.y = params.coverageScale;
+			sphMesh.scale.z = params.coverageScale;
+		}
 		coveragePositions.forEach(function(pos) {
 			var sp = sphMesh.clone();
 			sp.position.setX(pos.x);
@@ -662,7 +683,7 @@ function changeCoverageColor() {
 function changeCoverageScale() {
 	if (params.coverageDiscrete) {
 		coverageDirtyPos = true;
-		coverageDirtyCount = true;
+		// the dirty count will be updated in the octree calculation if
 	} else {
 		if (particles) {
 			particles.material.size = coverageParticleSize * params.coverageScale;
@@ -673,6 +694,7 @@ function changeCoverageScale() {
 				mesh.scale.z = params.coverageScale;
 			});
 		}
+		currentParams.minDim = 0;
 	}
 }
 
