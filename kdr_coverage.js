@@ -156,14 +156,10 @@ var Octree = function Octree(center, halfDim, minDim) {
 
 	this.points = [];
 
-	this.pxpypz = null;
-	this.pxpynz = null;
-	this.nxpypz = null;
-	this.nxpynz = null;
-	this.pxnypz = null;
-	this.pxnynz = null;
-	this.nxnypz = null;
-	this.nxnynz = null;
+	this.subtrees = []; // will hold references to subtrees
+	for (var i = 0; i < 8; ++i) {
+		this.subtrees.push(null);
+	}
 
 	this.addPoint = function(p) {
 		if (this.halfDim < this.minDim) {
@@ -190,119 +186,27 @@ var Octree = function Octree(center, halfDim, minDim) {
 				a.push(this.c);
 			}
 		} else {
-			if (this.pxpypz) {
-				this.pxpypz.getCentersWithPoint(a);
-			}
-			if (this.pxpynz) {
-				this.pxpynz.getCentersWithPoint(a);
-			}
-			if (this.nxpypz) {
-				this.nxpypz.getCentersWithPoint(a);
-			}
-			if (this.nxpynz) {
-				this.nxpynz.getCentersWithPoint(a);
-			}
-			if (this.pxnypz) {
-				this.pxnypz.getCentersWithPoint(a);
-			}
-			if (this.pxnynz) {
-				this.pxnynz.getCentersWithPoint(a);
-			}
-			if (this.nxnypz) {
-				this.nxnypz.getCentersWithPoint(a);
-			}
-			if (this.nxnynz) {
-				this.nxnynz.getCentersWithPoint(a);
-			}
+			this.subtrees.forEach(function(subtree) {
+				if (subtree) {
+					subtree.getCentersWithPoint(a);
+				}
+			});
 		}
 	}
 
 	this.getSubtree = function(p, create) {
-		if (p.y > this.c.y) {
-			if (p.x > this.c.x) {
-				if (p.z > this.c.z) {
-					if (!this.pxpypz && create) {
-						this.pxpypz = this.createSubtree(
-							this.c.x + halfDim,
-							this.c.y + halfDim,
-							this.c.z + halfDim
-						);
-					}
-					return this.pxpypz;
-				} else {
-					if (!this.pxpynz && create) {
-						this.pxpynz = this.createSubtree(
-							this.c.x + halfDim,
-							this.c.y + halfDim,
-							this.c.z - halfDim
-						);
-					}
-					return this.pxpynz;
-				}
-			} else {
-				if (p.z > this.c.z) {
-					if (!this.nxpypz && create) {
-						this.nxpypz = this.createSubtree(
-							this.c.x - halfDim,
-							this.c.y + halfDim,
-							this.c.z + halfDim
-						);
-					}
-					return this.nxpypz;
-				} else {
-					if (!this.nxpynz && create) {
-						this.nxpynz = this.createSubtree(
-							this.c.x - halfDim,
-							this.c.y + halfDim,
-							this.c.z - halfDim
-						);
-					}
-					return this.nxpynz;
-				}
-			}
-		} else {
-			if (p.x > this.c.x) {
-				if (p.z > this.c.z) {
-					if (!this.pxnypz && create) {
-						this.pxnypz = this.createSubtree(
-							this.c.x + halfDim,
-							this.c.y - halfDim,
-							this.c.z + halfDim
-						);
-					}
-					return this.pxnypz;
-				} else {
-					if (!this.pxnynz && create) {
-						this.pxnynz = this.createSubtree(
-							this.c.x + halfDim,
-							this.c.y - halfDim,
-							this.c.z - halfDim
-						);
-					}
-					return this.pxnynz;
-				}
-			} else {
-				if (p.z > this.c.z) {
-					if (!this.nxnypz && create) {
-						this.nxnypz = this.createSubtree(
-							this.c.x - halfDim,
-							this.c.y - halfDim,
-							this.c.z + halfDim
-						);
-					}
-					return this.nxnypz;
-				} else {
-					if (!this.nxnynz && create) {
-						this.nxnynz = this.createSubtree(
-							this.c.x - halfDim,
-							this.c.y - halfDim,
-							this.c.z - halfDim
-						);
-					}
-					return this.nxnynz;
-				}
-			}
+		var subtreeIndex =
+			(p.y < this.c.y ? 4 : 0) +
+			(p.x < this.c.x ? 2 : 0) +
+			(p.z < this.c.z ? 1 : 0);
+		if (null == this.subtrees[subtreeIndex] && create) {
+			this.subtrees[subtreeIndex] = this.createSubtree(
+				(p.x < this.c.x ? this.c.x - this.halfDim : this.c.x + this.halfDim),
+				(p.y < this.c.y ? this.c.y - this.halfDim : this.c.y + this.halfDim),
+				(p.z < this.c.z ? this.c.z - this.halfDim : this.c.z + this.halfDim)
+			);
 		}
+		return this.subtrees[subtreeIndex];
 	}
 
 	this.createSubtree = function(x, y, z) {
@@ -383,7 +287,7 @@ function init() {
 	coverageFolder.add(params, 'coverage');
 	coverageFolder.add(params, 'coverageType', ['particles', 'spheres', 'cubes']).name('type').onChange(onCoverageType);
 	coverageFolder.add(params, 'coverageTransparent').name('transparent').onChange(changeTransparency);
-	coverageFolder.add(params, 'coverageDiscrete').name('discrete').onChange(onChangeCoverateDiscrete);
+	coverageFolder.add(params, 'coverageDiscrete').name('discrete').onChange(onChangeCoverageDiscrete);
 	coverageFolder.add(params, 'coveragePrecision', 1, maxPrecision).step(1).name('precision').onFinishChange(onCoveragePrecision);
 	coverageFolder.add(params, 'basePrecision', 0, maxBasePrecision).step(1).onFinishChange(onCoveragePrecision);
 	coverageFolder.add(params, 'coverageScale', 0.1, 1).name('scale').onChange(changeCoverageScale);
@@ -664,7 +568,7 @@ function changeTransparency() {
 	}
 }
 
-function onChangeCoverateDiscrete() {
+function onChangeCoverageDiscrete() {
 	coverageDirtyPos = true;
 	coverageDirtyCount = true;
 }
