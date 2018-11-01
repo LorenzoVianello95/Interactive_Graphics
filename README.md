@@ -1,7 +1,9 @@
 # Interactive_Graphics
 
 Robot Manipulator with 7 DOF
+
 KEYWORDS:
+
 	- Direct kinematics.
 	- Inverse kinematics.
 	- Path planning both for position and orientation.
